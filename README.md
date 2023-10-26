@@ -42,13 +42,7 @@ You can easily test the P2P network and clock synchronization project using Dock
 git clone https://github.com/phucthuan1st/p2p-clock-sync.git
 ```
 
-2. **Build the Docker Image**: Navigate to the project directory and build a Docker image from the provided Dockerfile.
-
-```bash
-cd p2p-clock-sync
-docker build -t p2p-clock-sync .
-```
-
+2. **Setup Docker Network**: 
 You will need to setup a subnet in Docker. You can use the command below to create a subnet with 14 hosts:
 
 ```bash
