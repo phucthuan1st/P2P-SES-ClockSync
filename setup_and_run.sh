@@ -1,5 +1,6 @@
 #!/usr/bin/bash
 
+# Build the docker image
 docker build -t p2p-ses-clocksync .
 
 # Define the base IP address
