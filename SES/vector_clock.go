@@ -37,12 +37,10 @@ func (vc *VectorClock) String() string {
 }
 
 func (vc *VectorClock) Serialize(packet []byte) []byte {
-	data := bytes.Buffer{}
-	err := binary.Write(&data, binary.BigEndian, int32(vc.InstanceID))
-	if err != nil {
-		fmt.Println("Lỗi:", err)
+	data := new(bytes.Buffer)
 
-	}
+	binary.Write(data, binary.BigEndian, int32(vc.InstanceID))
+
 	for i := 0; i < vc.NInstance; i++ {
 		data.Write(vc.Vectors[i].Serialize())
 	}
@@ -75,6 +73,7 @@ func (vc *VectorClock) SelfMerge(sourceID, destinationID int) {
 
 func (vc *VectorClock) Merge(sourceVectorClock *VectorClock, sourceID, destinationID int) {
 	vc.Vectors[destinationID].Merge(sourceVectorClock.Vectors[sourceID])
+	//vc.Vectors[destinationID].Merge(sourceVectorClock.Vectors[sourceID])
 }
 
 func (vc *VectorClock) GetClock(index int) *LogicClock {

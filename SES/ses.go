@@ -108,6 +108,7 @@ func (ses *SES) Deliver(packet []byte) {
 	} else {
 		// Queue
 		ses.Queue = append(ses.Queue, []interface{}{tM, sourceVectorClock, packet})
+		//fmt.Println("Xem cai queue", ses.Queue)
 		//fmt.Printf(ses.GetDeliverLog(tM, sourceVectorClock, packet, "buffered", "BEFORE DELIVERED", true))
 		breakFlag := false
 		for !breakFlag {
@@ -116,8 +117,9 @@ func (ses *SES) Deliver(packet []byte) {
 				elements := item.([]interface{})
 				tM := elements[0].(*LogicClock)
 				sourceVectorClock := elements[1].(*VectorClock)
+				//fmt.Println("sourceVC", sourceVectorClock)
 				//packet := item[2].([]byte)
-				if tM.LessThanOrEqual(tM) {
+				if tM.LessThanOrEqual(tP) {
 					//fmt.Println(ses.GetDeliverLog(tM, sourceVectorClock, packet, "delivering from buffer", "BEFORE DELIVERED FROM BUFFERED", true))
 					ses.Merge(sourceVectorClock)
 					ses.Queue = append(ses.Queue[:index], ses.Queue[index+1:]...)

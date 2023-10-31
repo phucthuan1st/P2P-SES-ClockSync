@@ -15,11 +15,11 @@ const (
 type LogicClock struct {
 	NInstance  int
 	InstanceID int
-	Clock      []int
+	Clock      []int32
 }
 
 func NewLogicClock(nInstance, instanceID int, zeroFill bool) *LogicClock {
-	clock := make([]int, nInstance)
+	clock := make([]int32, nInstance)
 	if zeroFill {
 		for i := range clock {
 			clock[i] = 0
@@ -84,12 +84,12 @@ func (lc *LogicClock) Serialize() []byte {
 func (lc *LogicClock) Deserialize(data []byte) *LogicClock {
 	newClock := NewLogicClock(lc.NInstance, lc.InstanceID, false)
 	for i := 0; i < lc.NInstance; i++ {
-		newClock.Clock[i] = int(binary.BigEndian.Uint32(data[INT_SIZE*i : INT_SIZE*(i+1)]))
+		newClock.Clock[i] = int32(binary.BigEndian.Uint32(data[INT_SIZE*i : INT_SIZE*(i+1)]))
 	}
 	return newClock
 }
 
-func (lc *LogicClock) GetTime() []int {
+func (lc *LogicClock) GetTime() []int32 {
 	return lc.Clock
 }
 
@@ -118,7 +118,7 @@ func (lc *LogicClock) Merge(other *LogicClock) {
 	}
 }
 
-func max(a, b int) int {
+func max(a, b int32) int32 {
 	if a > b {
 		return a
 	}
