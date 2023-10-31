@@ -38,27 +38,28 @@ func (vc *VectorClock) String() string {
 
 func (vc *VectorClock) Serialize(packet []byte) []byte {
 	data := bytes.Buffer{}
-	err := binary.Write(&data, binary.BigEndian, vc.InstanceID)
+	err := binary.Write(&data, binary.BigEndian, int32(vc.InstanceID))
 	if err != nil {
 		fmt.Println("Lỗi:", err)
 
 	}
-	for _, vector := range vc.Vectors {
-		data.Write(vector.Serialize())
+	for i := 0; i < vc.NInstance; i++ {
+		data.Write(vc.Vectors[i].Serialize())
 	}
+
 	return append(data.Bytes(), packet...)
 }
 
 func (vc *VectorClock) Deserialize(packet []byte) (*VectorClock, []byte) {
 	dataSize := INT_SIZE * (vc.NInstance*vc.NInstance + 1)
-	data, packet := packet[:dataSize], packet[dataSize:]
+	data, packet := packet[0:dataSize], packet[dataSize:]
 
-	newInstanceID := binary.BigEndian.Uint32(data[:INT_SIZE])
-	newVectorClock := NewVectorClock(vc.NInstance, int(newInstanceID))
+	newInstanceID := int(binary.BigEndian.Uint32(data[:INT_SIZE]))
+	newVectorClock := NewVectorClock(vc.NInstance, newInstanceID)
 	data = data[INT_SIZE:]
 
 	for i := 0; i < vc.NInstance; i++ {
-		newVectorClock.Vectors[i] = vc.Vectors[i].Deserialize(data[i*INT_SIZE*vc.NInstance : (i+1)*INT_SIZE*vc.NInstance])
+		newVectorClock.Vectors[i] = newVectorClock.Vectors[i].Deserialize(data[i*INT_SIZE*vc.NInstance : (i+1)*INT_SIZE*vc.NInstance])
 	}
 
 	return newVectorClock, packet

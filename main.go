@@ -24,9 +24,11 @@ func main() {
 	fmt.Println("--------------")
 
 	p0.Deliver(pk2)
+	fmt.Println("**************")
 	fmt.Println(p0)
 	fmt.Println("--------------")
 	p0.Deliver(pk1)
+	fmt.Println("**************")
 	fmt.Println(p0)
 	fmt.Println("--------------")
 
@@ -39,6 +41,7 @@ func main() {
 	fmt.Println("--------------")
 
 	p1.Deliver(pk4)
+	fmt.Println("**************")
 	fmt.Println(p1)
 	fmt.Println("--------------")
 
@@ -47,14 +50,16 @@ func main() {
 	fmt.Println("--------------")
 
 	p0.Deliver(pk5)
+	fmt.Println("**************")
 	fmt.Println(p0)
 	fmt.Println("--------------")
 
 	p0.Deliver(pk3)
+	fmt.Println("**************")
 	fmt.Println(p0)
 	fmt.Println("--------------")
 
 	sendPacket := p1.Send(0, []byte{})
-	fmt.Println(string(sendPacket))
+	fmt.Println(p1.Deserialize(sendPacket))
 	fmt.Println(p1)
 }

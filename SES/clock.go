@@ -63,9 +63,20 @@ func (lc *LogicClock) LessThanOrEqual(other *LogicClock) bool {
 }
 
 func (lc *LogicClock) Serialize() []byte {
+	/*data := make([]byte, INT_SIZE)
+	for i := 0; i < lc.NInstance; i++ {
+		buf := new(bytes.Buffer)
+		err := binary.Write(buf, binary.BigEndian, uint32(lc.Clock[i]))
+		if err != nil {
+			// Xử lý lỗi nếu cần thiết
+		}
+		data = append(data, buf.Bytes()...)
+	}
+
+	return data*/
 	data := bytes.Buffer{}
 	for _, value := range lc.Clock {
-		binary.Write(&data, binary.BigEndian, value)
+		binary.Write(&data, binary.BigEndian, int32(value))
 	}
 	return data.Bytes()
 }
@@ -73,9 +84,7 @@ func (lc *LogicClock) Serialize() []byte {
 func (lc *LogicClock) Deserialize(data []byte) *LogicClock {
 	newClock := NewLogicClock(lc.NInstance, lc.InstanceID, false)
 	for i := 0; i < lc.NInstance; i++ {
-		value := 0
-		binary.Read(bytes.NewReader(data[i*INT_SIZE:(i+1)*INT_SIZE]), binary.BigEndian, &value)
-		newClock.Clock[i] = value
+		newClock.Clock[i] = int(binary.BigEndian.Uint32(data[INT_SIZE*i : INT_SIZE*(i+1)]))
 	}
 	return newClock
 }

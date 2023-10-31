@@ -1,10 +1,12 @@
 package SES
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"log"
-	"sync"
+
+	"golang.org/x/sync/semaphore"
 )
 
 var loggerSend = log.New(io.Writer(nil), "__sender_log__", log.LstdFlags)
@@ -12,16 +14,18 @@ var loggerReceive = log.New(io.Writer(nil), "__receiver_log__", log.LstdFlags)
 
 type SES struct {
 	VectorClock *VectorClock
-	Queue       [][]interface{}
-	Lock        sync.Mutex
+	Queue       []interface{}
+	Lock        *semaphore.Weighted
 }
 
 func NewSES(nInstance int, instanceID int) *SES {
 	vectorClock := NewVectorClock(nInstance, instanceID)
-	queue := make([][]interface{}, 0)
+	queue := make([]interface{}, 0)
+	var sem = semaphore.NewWeighted(int64(1))
 	return &SES{
 		VectorClock: vectorClock,
 		Queue:       queue,
+		Lock:        sem,
 	}
 }
 
@@ -88,29 +92,33 @@ func (ses *SES) Merge(sourceVectorClock *VectorClock) {
 }
 
 func (ses *SES) Deliver(packet []byte) {
-
+	ctx := context.TODO()
+	ses.Lock.Acquire(ctx, 1)
 	sourceVectorClock, packet := ses.Deserialize(packet)
+	fmt.Println("source_vector_clock\n", sourceVectorClock)
+	fmt.Println("packet\n", packet)
 	tP := ses.VectorClock.GetClock(ses.VectorClock.InstanceID)
 	tM := sourceVectorClock.GetClock(ses.VectorClock.InstanceID)
 	fmt.Println("Cai t_p\n", tP)
 	fmt.Println("Cai t_m\n", tM)
 	if tM.LessThanOrEqual(tP) {
 		// Deliver
-		loggerReceive.Printf(ses.GetDeliverLog(tM, sourceVectorClock, packet, "delivering", "BEFORE DELIVERED", true))
+		//fmt.Printf(ses.GetDeliverLog(tM, sourceVectorClock, packet, "delivering", "BEFORE DELIVERED", true))
 		ses.Merge(sourceVectorClock)
 	} else {
 		// Queue
 		ses.Queue = append(ses.Queue, []interface{}{tM, sourceVectorClock, packet})
-		loggerReceive.Printf(ses.GetDeliverLog(tM, sourceVectorClock, packet, "buffered", "BEFORE DELIVERED", true))
+		//fmt.Printf(ses.GetDeliverLog(tM, sourceVectorClock, packet, "buffered", "BEFORE DELIVERED", true))
 		breakFlag := false
 		for !breakFlag {
 			breakFlag = true
 			for index, item := range ses.Queue {
-				tM := item[0].(*LogicClock)
-				sourceVectorClock := item[1].(*VectorClock)
-				packet := item[2].([]byte)
+				elements := item.([]interface{})
+				tM := elements[0].(*LogicClock)
+				sourceVectorClock := elements[1].(*VectorClock)
+				//packet := item[2].([]byte)
 				if tM.LessThanOrEqual(tM) {
-					fmt.Println(ses.GetDeliverLog(tM, sourceVectorClock, packet, "delivering from buffer", "BEFORE DELIVERED FROM BUFFERED", true))
+					//fmt.Println(ses.GetDeliverLog(tM, sourceVectorClock, packet, "delivering from buffer", "BEFORE DELIVERED FROM BUFFERED", true))
 					ses.Merge(sourceVectorClock)
 					ses.Queue = append(ses.Queue[:index], ses.Queue[index+1:]...)
 					breakFlag = false
@@ -119,16 +127,16 @@ func (ses *SES) Deliver(packet []byte) {
 			}
 		}
 	}
+	ses.Lock.Release(1)
 }
 
 func (s *SES) Send(destinationID int, packet []byte) []byte {
-	s.Lock.Lock()
-	defer s.Lock.Unlock()
-
+	ctx := context.TODO()
+	s.Lock.Acquire(ctx, 1)
 	s.VectorClock.Increase()
-	fmt.Println(s.GetSenderLog(destinationID, packet))
+	//fmt.Println(s.GetSenderLog(destinationID, packet))
 	result := s.Serialize(packet)
 	s.VectorClock.SelfMerge(s.VectorClock.InstanceID, destinationID)
-
+	s.Lock.Release(1)
 	return result
 }
