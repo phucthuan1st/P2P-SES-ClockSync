@@ -13,3 +13,7 @@ for i in {1..10}; do
     docker run -d --net p2p --ip "$container_ip" --name "$container_name" p2p-ses-clocksync
 done
 
+# for i in {1..10}; do
+#     container_name="Node$i"
+#     docker rm $container_name
+# done

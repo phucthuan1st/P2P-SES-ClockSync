@@ -4,12 +4,15 @@ FROM golang:latest
 # Set the working directory
 WORKDIR /go/src/app
 
-# Install Git
-RUN apt-get update && apt-get install -y git
+# Copy the source code to the working directory
+COPY ./node        /go/src/app//node
+COPY ./vectorclock /go/src/app/vectorclock
+COPY ./go.mod      /go/src/app/go.mod
+COPY ./main.go     /go/src/app/main.go
 
-# Clone your project from GitHub
-RUN git clone https://github.com/phucthuan1st/p2p-ses-clocksync
+# Build the source code
+RUN go build -o node
 
-# Set the entry point for your application
-ENTRYPOINT ["go", "run", "/go/src/app/github.com/phucthuan1st/p2p-ses-clocksync/main.go"]
- 
+ENV NODE_PORT = 9999
+
+ENTRYPOINT [ "./node" ]
