@@ -2,11 +2,12 @@ package vectorclock
 
 import (
 	"encoding/json"
+	"sort"
 	"sync"
 )
 
 type ClockEntry struct {
-	PeerID string
+	NodeID string
 	Value  int64
 }
 
@@ -30,52 +31,110 @@ func (vc *VectorClock) Increment(peerID string) {
 	defer vc.mu.Unlock()
 
 	for i, entry := range vc.clock {
-		if entry.PeerID == peerID {
+		if entry.NodeID == peerID {
 			vc.clock[i].Value++
 			return
 		}
 	}
 
 	// If the peerID doesn't exist in the clock, add it with value 1
-	vc.clock = append(vc.clock, ClockEntry{PeerID: peerID, Value: 1})
+	vc.clock = append(vc.clock, ClockEntry{NodeID: peerID, Value: 1})
 }
 
 func (vc *VectorClock) Compare(other *VectorClock) int {
 	vc.mu.Lock()
 	defer vc.mu.Unlock()
 
+	vc.Normalize(other)
+	other.Normalize(vc)
+
+	// A == B
+	if vc.areEqual(other) {
+		return 0
+	}
+
+	// A < B
+	if vc.isLessThan(other) {
+		return -1
+	}
+
+	// A > B
+	if other.isLessThan(vc) {
+		return 1
+	}
+
+	// concurrently
+	return -101
+}
+
+// Rule 1: Equal (ta = tb iff ta[i] = tb[i])
+func (vc *VectorClock) areEqual(other *VectorClock) bool {
+	for i := 0; i < len(vc.clock); i++ {
+		if vc.clock[i].Value != other.clock[i].Value {
+			return false
+		}
+	}
+	return true
+}
+
+// Rule 3: Less than (ta < tb iff ta[i] <= tb[i] and ta[i] != tb[i], for all i)
+func (vc *VectorClock) isLessThan(other *VectorClock) bool {
+	for i := 0; i < len(vc.clock); i++ {
+		if vc.clock[i].Value >= other.clock[i].Value {
+			return false
+		}
+	}
+	return true
+}
+
+func MergeClock(c1, c2 *VectorClock) *VectorClock {
+	c1.mu.Lock()
+	defer c1.mu.Unlock()
+
+	c2.mu.Lock()
+	defer c2.mu.Unlock()
+
+	mergedClock := NewVectorClock()
+
+	for _, entry := range c1.clock {
+		mergedClock.Increment(entry.NodeID)
+	}
+	for _, entry := range c2.clock {
+		mergedClock.Increment(entry.NodeID)
+	}
+
+	return mergedClock
+}
+
+// Normalize the vector clock by ensuring it has all keys from another vector
+func (vc *VectorClock) Normalize(other *VectorClock) {
+	vc.mu.Lock()
+	defer vc.mu.Unlock()
+
+	// Create a map to store entries from the current vector clock
+	ownEntries := make(map[string]int64)
+	for _, entry := range vc.clock {
+		ownEntries[entry.NodeID] = entry.Value
+	}
+
 	for _, entry := range other.clock {
-		found := false
-		for _, ownEntry := range vc.clock {
-			if ownEntry.PeerID == entry.PeerID {
-				found = true
-				if ownEntry.Value < entry.Value {
-					return -1
-				} else if ownEntry.Value > entry.Value {
-					return 1
-				}
-			}
-		}
-		if !found {
-			// Missing entry in the other clock
-			return -1
+		if _, found := ownEntries[entry.NodeID]; !found {
+			vc.clock = append(vc.clock, ClockEntry{
+				NodeID: entry.NodeID,
+				Value:  0,
+			})
 		}
 	}
 
-	for _, ownEntry := range vc.clock {
-		found := false
-		for _, entry := range other.clock {
-			if ownEntry.PeerID == entry.PeerID {
-				found = true
-			}
-		}
-		if !found {
-			// Missing entry in own clock
-			return 1
-		}
-	}
+	// Sort the clock entries to ensure they are in ascending order by PeerID
+	vc.SortClockEntries()
+}
 
-	return 0
+// Add a new function to sort the clock entries by PeerID
+func (vc *VectorClock) SortClockEntries() {
+	sort.Slice(vc.clock, func(i, j int) bool {
+		return vc.clock[i].NodeID < vc.clock[j].NodeID
+	})
 }
 
 func (vc *VectorClock) Serialize() (string, error) {
@@ -99,24 +158,24 @@ func (vc *VectorClock) Deserialize(serialized string) error {
 		return err
 	}
 	vc.clock = data
+	vc.SortClockEntries() // Ensure the clock entries are sorted after deserialization
 	return nil
 }
 
-func MergeClock(c1, c2 *VectorClock) *VectorClock {
-	c1.mu.Lock()
-	defer c1.mu.Unlock()
+func (vc *VectorClock) Clone() *VectorClock {
+	vc.mu.Lock()
+	defer vc.mu.Unlock()
 
-	c2.mu.Lock()
-	defer c2.mu.Unlock()
+	// Create a new VectorClock
+	clone := NewVectorClock()
 
-	mergedClock := NewVectorClock()
-
-	for _, entry := range c1.clock {
-		mergedClock.Increment(entry.PeerID)
+	// Copy the clock entries
+	for _, entry := range vc.clock {
+		clone.clock = append(clone.clock, ClockEntry{
+			NodeID: entry.NodeID,
+			Value:  entry.Value,
+		})
 	}
-	for _, entry := range c2.clock {
-		mergedClock.Increment(entry.PeerID)
-	}
 
-	return mergedClock
+	return clone
 }

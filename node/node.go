@@ -21,6 +21,7 @@ type Node struct {
 }
 
 func NewNode(id, ip, port string) *Node {
+
 	p := &Node{
 		ID:              id,
 		IP:              ip,
@@ -108,25 +109,6 @@ func (p *Node) RemoveNodeConnection(id string) {
 	delete(p.NodesConnection, id)
 }
 
-func (p *Node) SendMessage(id, message string) {
-	p.Mutex.Lock()
-	defer p.Mutex.Unlock()
-
-	if conn, ok := p.NodesConnection[id]; ok {
-		// TODO: send message along with the other clock
-		// increment own process clock counter
-		p.OwnVectorClock.Increment(p.ID)
-		fmt.Printf("--> Node %s sending message to node %s: %s\n", p.ID, id, message)
-		_, err := conn.Write([]byte(message + "|"))
-
-		if err != nil {
-			fmt.Println("Error sending message to Node", id)
-		}
-	} else {
-		fmt.Println("Node", id, "not found")
-	}
-}
-
 func (p *Node) MakeNodeConnection(nodeID, nodeIP, nodePort string) error {
 	remoteAddr := nodeIP + ":" + nodePort
 
@@ -150,4 +132,35 @@ func (p *Node) MakeNodeConnection(nodeID, nodeIP, nodePort string) error {
 	}
 
 	return nil
+}
+
+func (p *Node) SendMessage(id, message string) {
+	p.Mutex.Lock()
+	defer p.Mutex.Unlock()
+
+	if conn, ok := p.NodesConnection[id]; ok {
+		// TODO: send message along with the other clock
+		// increment own process clock counter
+		p.OwnVectorClock.Increment(p.ID)
+
+		// TODO: save other clock
+		p.OtherNodeClock[id] = p.OwnVectorClock.Clone()
+
+		clockString, _ := p.OwnVectorClock.Serialize()
+		message = message + "\n   Clock status:\n   " + clockString
+
+		fmt.Printf("--> Node %s sending message to node %s: %s\n", p.ID, id, message)
+		_, err := conn.Write([]byte(message + "|"))
+
+		if err != nil {
+			fmt.Println("Error sending message to Node", id)
+		}
+
+		for id, clock := range p.OtherNodeClock {
+			clockString, _ := clock.Serialize()
+			fmt.Printf("   From %s ---> %s: %s\n", p.ID, id, clockString)
+		}
+	} else {
+		fmt.Println("Node", id, "not found")
+	}
 }
