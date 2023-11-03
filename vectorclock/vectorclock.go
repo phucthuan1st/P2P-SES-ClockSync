@@ -2,93 +2,86 @@ package vectorclock
 
 import (
 	"encoding/json"
+	"sync"
 )
 
-type VectorClock struct {
-	clock map[string]int64
+type ClockEntry struct {
+	PeerID string
+	Value  int64
 }
 
-func (c *VectorClock) GetClock() map[string]int64 {
-	return c.clock
+type VectorClock struct {
+	clock []ClockEntry
+	mu    sync.Mutex
 }
 
 func NewVectorClock() *VectorClock {
 	return &VectorClock{
-		clock: make(map[string]int64),
+		clock: make([]ClockEntry, 0),
 	}
 }
 
-// TODO: Increment the vector clock for a specific peer
+func (vc *VectorClock) GetClock() []ClockEntry {
+	return vc.clock
+}
+
 func (vc *VectorClock) Increment(peerID string) {
-	if _, ok := vc.clock[peerID]; !ok {
-		vc.clock[peerID] = 1
-	} else {
-		vc.clock[peerID]++
-	}
-}
+	vc.mu.Lock()
+	defer vc.mu.Unlock()
 
-func (vc *VectorClock) isLessThan(other *VectorClock) bool {
-	for k, v1 := range vc.clock {
-		v2, ok := other.clock[k]
-
-		if !ok {
-			continue
-		}
-
-		if v1 > v2 {
-			return false
+	for i, entry := range vc.clock {
+		if entry.PeerID == peerID {
+			vc.clock[i].Value++
+			return
 		}
 	}
 
-	return true
-}
-
-func (vc *VectorClock) isMoreThan(other *VectorClock) bool {
-	for k, v1 := range vc.clock {
-		v2, ok := other.clock[k]
-
-		if !ok {
-			continue
-		}
-
-		if v1 < v2 {
-			return false
-		}
-	}
-
-	return true
-}
-
-// Normalize the vector clock by ensuring it has all keys from another vector
-func (vc *VectorClock) Normalize(other *VectorClock) {
-	for k := range other.clock {
-		if _, ok := vc.clock[k]; !ok {
-			vc.clock[k] = 0
-		}
-	}
+	// If the peerID doesn't exist in the clock, add it with value 1
+	vc.clock = append(vc.clock, ClockEntry{PeerID: peerID, Value: 1})
 }
 
 func (vc *VectorClock) Compare(other *VectorClock) int {
-	// Normalize both vector clocks
-	vc.Normalize(other)
-	other.Normalize(vc)
+	vc.mu.Lock()
+	defer vc.mu.Unlock()
 
-	// A is before B
-	if vc.isLessThan(other) {
-		return -1
+	for _, entry := range other.clock {
+		found := false
+		for _, ownEntry := range vc.clock {
+			if ownEntry.PeerID == entry.PeerID {
+				found = true
+				if ownEntry.Value < entry.Value {
+					return -1
+				} else if ownEntry.Value > entry.Value {
+					return 1
+				}
+			}
+		}
+		if !found {
+			// Missing entry in the other clock
+			return -1
+		}
 	}
 
-	// A is after B
-	if vc.isMoreThan(other) {
-		return 1
+	for _, ownEntry := range vc.clock {
+		found := false
+		for _, entry := range other.clock {
+			if ownEntry.PeerID == entry.PeerID {
+				found = true
+			}
+		}
+		if !found {
+			// Missing entry in own clock
+			return 1
+		}
 	}
 
-	// A and B are concurrent
 	return 0
 }
 
-// Serialize the vector clock to a JSON string
 func (vc *VectorClock) Serialize() (string, error) {
+	vc.mu.Lock()
+	defer vc.mu.Unlock()
+
 	data, err := json.Marshal(vc.clock)
 	if err != nil {
 		return "", err
@@ -96,9 +89,11 @@ func (vc *VectorClock) Serialize() (string, error) {
 	return string(data), nil
 }
 
-// Deserialize a JSON string to a vector clock
 func (vc *VectorClock) Deserialize(serialized string) error {
-	var data map[string]int64
+	vc.mu.Lock()
+	defer vc.mu.Unlock()
+
+	var data []ClockEntry
 	err := json.Unmarshal([]byte(serialized), &data)
 	if err != nil {
 		return err
@@ -107,22 +102,21 @@ func (vc *VectorClock) Deserialize(serialized string) error {
 	return nil
 }
 
-// Merge 2 vectors clock
 func MergeClock(c1, c2 *VectorClock) *VectorClock {
-	c1.Normalize(c2)
-	c2.Normalize(c1)
+	c1.mu.Lock()
+	defer c1.mu.Unlock()
 
-	mergeClock := NewVectorClock()
+	c2.mu.Lock()
+	defer c2.mu.Unlock()
 
-	for k, v := range c1.clock {
-		mergeClock.clock[k] = v
+	mergedClock := NewVectorClock()
+
+	for _, entry := range c1.clock {
+		mergedClock.Increment(entry.PeerID)
+	}
+	for _, entry := range c2.clock {
+		mergedClock.Increment(entry.PeerID)
 	}
 
-	for k, v := range c2.clock {
-		if v > mergeClock.clock[k] {
-			mergeClock.clock[k] = v
-		}
-	}
-
-	return mergeClock
+	return mergedClock
 }

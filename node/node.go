@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"p2p-ses-clocksync/vectorclock"
+	"strings"
 	"sync"
 )
 
@@ -12,16 +13,16 @@ type Node struct {
 	ID              string // ID is own remote address as ip:port
 	IP              string
 	Port            string
-	Mutex           sync.Mutex
+	Mutex           sync.RWMutex
 	Listener        net.Listener        // own listener
 	NodesConnection map[string]net.Conn // save connection of connected nodes
 	OwnVectorClock  *vectorclock.VectorClock
 	OtherNodeClock  map[string]*vectorclock.VectorClock
 }
 
-func NewNode(ip, port string) *Node {
+func NewNode(id, ip, port string) *Node {
 	p := &Node{
-		ID:              ip + ":" + port,
+		ID:              id,
 		IP:              ip,
 		Port:            port,
 		NodesConnection: make(map[string]net.Conn),
@@ -52,15 +53,27 @@ func (p *Node) AcceptConnections() {
 			continue
 		}
 		remoteAddr := conn.RemoteAddr().String()
-		p.AddNodeConnection(remoteAddr, conn)
+
+		// Read the first message (name) from the incoming node
+		nameBuffer := make([]byte, 128) // Adjust the buffer size as needed
+		n, err := conn.Read(nameBuffer)
+		if err != nil {
+			fmt.Printf("[x] Error reading name from Node %s: %v\n", remoteAddr, err)
+			continue
+		}
+		incomingName := string(nameBuffer[:n])
+
+		// Add the connected peer to the list of peers with the incoming name
+		fmt.Printf("[a] Node %s accepted connection from Node %s\n", p.ID, incomingName)
+		p.AddNodeConnection(incomingName, conn)
 	}
 }
 
 func (p *Node) AddNodeConnection(id string, conn net.Conn) {
 	p.Mutex.Lock()
-	defer p.Mutex.Unlock()
 	p.NodesConnection[id] = conn
-	fmt.Printf("[a] Node %s add Node %s to its handler\n", p.ID, id)
+	p.Mutex.Unlock()
+
 	go p.HandleNodeCommunication(id, conn)
 }
 
@@ -70,14 +83,22 @@ func (p *Node) HandleNodeCommunication(id string, conn net.Conn) {
 		p.RemoveNodeConnection(id)
 	}()
 	for {
-		data := make([]byte, 1024)
+		data := make([]byte, 128)
 		n, err := conn.Read(data)
 		if err != nil {
 			fmt.Printf("[x] Node %s disconnected from Node %s\n", p.ID, id)
 			break
 		}
-		message := string(data[:n])
-		fmt.Printf("<-- %s received from Node %s: %s\n", p.ID, id, message)
+
+		// TODO: check the clock to decide whether buffer or delivery
+		dataString := string(data[:n])
+		messages := strings.Split(dataString, "|")
+
+		for _, message := range messages {
+			if message != "" {
+				fmt.Printf("<-- %s received a message from Node %s: %s\n", p.ID, id, message)
+			}
+		}
 	}
 }
 
@@ -88,11 +109,16 @@ func (p *Node) RemoveNodeConnection(id string) {
 }
 
 func (p *Node) SendMessage(id, message string) {
-	fmt.Printf("--> Node %s sending message to node %s: %s\n", p.ID, id, message)
 	p.Mutex.Lock()
 	defer p.Mutex.Unlock()
+
 	if conn, ok := p.NodesConnection[id]; ok {
-		_, err := conn.Write([]byte(message))
+		// TODO: send message along with the other clock
+		// increment own process clock counter
+		p.OwnVectorClock.Increment(p.ID)
+		fmt.Printf("--> Node %s sending message to node %s: %s\n", p.ID, id, message)
+		_, err := conn.Write([]byte(message + "|"))
+
 		if err != nil {
 			fmt.Println("Error sending message to Node", id)
 		}
@@ -101,19 +127,27 @@ func (p *Node) SendMessage(id, message string) {
 	}
 }
 
-func (p *Node) MakeNodeConnection(nodeIP, nodePort string) error {
+func (p *Node) MakeNodeConnection(nodeID, nodeIP, nodePort string) error {
 	remoteAddr := nodeIP + ":" + nodePort
 
 	// Establish a TCP connection to the remote peer
 	conn, err := net.Dial("tcp", remoteAddr)
 	if err != nil {
-		fmt.Printf("[x] Error connecting to Node %s at %s: %v\n", remoteAddr, remoteAddr, err)
+		fmt.Printf("[x] Error connecting to Node %s at %s: %v\n", nodeID, remoteAddr, err)
 		return err
 	}
 
 	// Add the connected peer to the list of peers
-	fmt.Printf("[v] Node %s make a connection to Node %s\n", p.ID, remoteAddr)
-	p.AddNodeConnection(remoteAddr, conn)
+	fmt.Printf("[m] Node %s make a connection to Node %s\n", p.ID, nodeID)
+	p.AddNodeConnection(nodeID, conn)
+
+	// Send a message with the name of the node
+	message := p.ID
+	_, err = conn.Write([]byte(message))
+	if err != nil {
+		fmt.Printf("[x] Error sending message to Node %s: %v\n", nodeID, err)
+		return err
+	}
 
 	return nil
 }

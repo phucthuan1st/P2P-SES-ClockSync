@@ -1,32 +1,32 @@
 package main
 
 import (
+	"fmt"
 	"math/rand"
 	"net"
 	"p2p-ses-clocksync/node"
-	"time"
 )
 
 func main() {
 
-	// Create three nodes
-	nodeA := node.NewNode("127.0.0.1", "9000")
-	nodeB := node.NewNode("127.0.0.1", "9001")
-	nodeC := node.NewNode("127.0.0.1", "9002")
+	// TODO: Create three nodes
+	nodeA := node.NewNode("A", "127.0.0.1", "9000")
+	nodeB := node.NewNode("B", "127.0.0.1", "9001")
+	nodeC := node.NewNode("C", "127.0.0.1", "9002")
 
-	// Connect nodes to each other
-	nodeA.MakeNodeConnection("127.0.0.1", "9001")
-	nodeA.MakeNodeConnection("127.0.0.1", "9002")
+	// TODO: Connect nodes to each other
+	nodeA.MakeNodeConnection("B", "127.0.0.1", "9001")
+	nodeA.MakeNodeConnection("C", "127.0.0.1", "9002")
 
-	nodeB.MakeNodeConnection("127.0.0.1", "9002")
+	nodeB.MakeNodeConnection("C", "127.0.0.1", "9002")
 
-	// Simulate sending messages
+	// TODO: After complete connect each node, start to simulate message sending and clock synchronization
 	go func() {
 		message := "Hello from A"
 		for i := 0; i < 5; i++ {
 			randomNodeID := getRandomNodeID(nodeA.NodesConnection)
-			nodeA.SendMessage(randomNodeID, message)
-			time.Sleep(time.Second)
+			nodeA.SendMessage(randomNodeID, fmt.Sprintf("%d - %s", i, message))
+			//time.Sleep(time.Second)
 		}
 	}()
 
@@ -35,8 +35,8 @@ func main() {
 
 		for i := 0; i < 5; i++ {
 			randomNodeID := getRandomNodeID(nodeB.NodesConnection)
-			nodeB.SendMessage(randomNodeID, message)
-			time.Sleep(time.Second)
+			nodeB.SendMessage(randomNodeID, fmt.Sprintf("%d - %s", i, message))
+			//time.Sleep(time.Second)
 		}
 	}()
 
@@ -45,8 +45,8 @@ func main() {
 
 		for i := 0; i < 5; i++ {
 			randomNodeID := getRandomNodeID(nodeC.NodesConnection)
-			nodeC.SendMessage(randomNodeID, message)
-			time.Sleep(time.Second)
+			nodeC.SendMessage(randomNodeID, fmt.Sprintf("%d - %s", i, message))
+			//time.Sleep(time.Second)
 		}
 	}()
 
