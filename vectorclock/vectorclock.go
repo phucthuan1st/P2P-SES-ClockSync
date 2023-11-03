@@ -45,8 +45,8 @@ func (vc *VectorClock) Compare(other *VectorClock) int {
 	vc.mu.Lock()
 	defer vc.mu.Unlock()
 
-	vc.Normalize(other)
-	other.Normalize(vc)
+	vc.normalize(other)
+	other.normalize(vc)
 
 	// A == B
 	if vc.areEqual(other) {
@@ -106,8 +106,8 @@ func MergeClock(c1, c2 *VectorClock) *VectorClock {
 	return mergedClock
 }
 
-// Normalize the vector clock by ensuring it has all keys from another vector
-func (vc *VectorClock) Normalize(other *VectorClock) {
+// normalize the vector clock by ensuring it has all keys from another vector
+func (vc *VectorClock) normalize(other *VectorClock) {
 	vc.mu.Lock()
 	defer vc.mu.Unlock()
 
@@ -127,16 +127,17 @@ func (vc *VectorClock) Normalize(other *VectorClock) {
 	}
 
 	// Sort the clock entries to ensure they are in ascending order by PeerID
-	vc.SortClockEntries()
+	vc.sortClockEntries()
 }
 
 // Add a new function to sort the clock entries by PeerID
-func (vc *VectorClock) SortClockEntries() {
+func (vc *VectorClock) sortClockEntries() {
 	sort.Slice(vc.clock, func(i, j int) bool {
 		return vc.clock[i].NodeID < vc.clock[j].NodeID
 	})
 }
 
+// serialize current clock to json format
 func (vc *VectorClock) Serialize() (string, error) {
 	vc.mu.Lock()
 	defer vc.mu.Unlock()
@@ -148,6 +149,7 @@ func (vc *VectorClock) Serialize() (string, error) {
 	return string(data), nil
 }
 
+// deserialize json string to clock object
 func (vc *VectorClock) Deserialize(serialized string) error {
 	vc.mu.Lock()
 	defer vc.mu.Unlock()
@@ -158,10 +160,11 @@ func (vc *VectorClock) Deserialize(serialized string) error {
 		return err
 	}
 	vc.clock = data
-	vc.SortClockEntries() // Ensure the clock entries are sorted after deserialization
+	vc.sortClockEntries() // Ensure the clock entries are sorted after deserialization
 	return nil
 }
 
+// Clone current clock to a new one
 func (vc *VectorClock) Clone() *VectorClock {
 	vc.mu.Lock()
 	defer vc.mu.Unlock()

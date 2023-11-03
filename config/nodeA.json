@@ -1,0 +1,16 @@
+{
+  "nodeID": "A",
+  "nodeIP": "127.0.0.1",
+  "nodePort": 9000,
+  "connectTo": [
+    { "nodeID": "B", "nodeIP": "127.0.0.1", "nodePort": 9001 },
+    { "nodeID": "C", "nodeIP": "127.0.0.1", "nodePort": 9002 },
+    { "nodeID": "D", "nodeIP": "127.0.0.1", "nodePort": 9003 },
+    { "nodeID": "E", "nodeIP": "127.0.0.1", "nodePort": 9004 },
+    { "nodeID": "F", "nodeIP": "127.0.0.1", "nodePort": 9005 },
+    { "nodeID": "G", "nodeIP": "127.0.0.1", "nodePort": 9006 },
+    { "nodeID": "H", "nodeIP": "127.0.0.1", "nodePort": 9007 },
+    { "nodeID": "I", "nodeIP": "127.0.0.1", "nodePort": 9008 },
+    { "nodeID": "J", "nodeIP": "127.0.0.1", "nodePort": 9009 }
+  ]
+}

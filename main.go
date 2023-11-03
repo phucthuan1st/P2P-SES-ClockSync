@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"math/rand"
@@ -9,20 +10,40 @@ import (
 	"p2p-ses-clocksync/node"
 )
 
+type NodeConfig struct {
+	NodeID    string
+	NodeIP    string
+	NodePort  int
+	ConnectTo []struct {
+		NodeID   string
+		NodeIP   string
+		NodePort int
+	}
+}
+
 func main() {
-	id := flag.String("id", "A", "Node ID")
-	host := flag.String("host", "127.0.0.1", "Host IP")
-	var port string
-	flag.StringVar(&port, "port", "9000", "Port to listen")
+	configFile := flag.String("config", "", "Path to configuration file")
 	flag.Parse()
 
-	if port == "" {
+	if *configFile == "" {
 		flag.Usage()
-		fmt.Println("Error: --port is required.")
+		fmt.Println("Error: --config is required.")
 		os.Exit(1)
 	}
 
-	current := node.NewNode(*id, *host, port)
+	configData, err := os.ReadFile(*configFile)
+	if err != nil {
+		fmt.Printf("Error reading configuration file: %v\n", err)
+		os.Exit(1)
+	}
+
+	var nodeConfig NodeConfig
+	if err := json.Unmarshal(configData, &nodeConfig); err != nil {
+		fmt.Printf("Error parsing configuration file: %v\n", err)
+		os.Exit(1)
+	}
+
+	current := node.NewNode(nodeConfig.NodeID, nodeConfig.NodeIP, fmt.Sprint(nodeConfig.NodePort))
 
 	// Menu for choosing connect a new node, or start simulating
 	for {
@@ -43,30 +64,9 @@ func main() {
 		switch choice {
 		case 1:
 			// Implement connecting to a new node
-			var nodeID, nodeIP, nodePort string
-
-			fmt.Print("Enter the new node's ID: ")
-			_, err := fmt.Scan(&nodeID)
-			if err != nil {
-				fmt.Println("Error reading input.")
-				continue
+			for _, connection := range nodeConfig.ConnectTo {
+				current.MakeNodeConnection(connection.NodeID, connection.NodeIP, fmt.Sprint(connection.NodePort))
 			}
-
-			fmt.Print("Enter the new node's IP: ")
-			_, err = fmt.Scan(&nodeIP)
-			if err != nil {
-				fmt.Println("Error reading input.")
-				continue
-			}
-
-			fmt.Print("Enter the new node's Port: ")
-			_, err = fmt.Scan(&nodePort)
-			if err != nil {
-				fmt.Println("Error reading input.")
-				continue
-			}
-			// Use nodeID, nodeIP, and nodePort to connect to the new node
-			current.MakeNodeConnection(nodeID, nodeIP, nodePort)
 		case 2:
 			go simulateMessages(current)
 		case 3:

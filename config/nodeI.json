@@ -1,0 +1,6 @@
+{
+  "nodeID": "I",
+  "nodeIP": "127.0.0.1",
+  "nodePort": 9008,
+  "connectTo": [{ "nodeID": "J", "nodeIP": "127.0.0.1", "nodePort": 9009 }]
+}

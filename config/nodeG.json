@@ -1,0 +1,10 @@
+{
+  "nodeID": "G",
+  "nodeIP": "127.0.0.1",
+  "nodePort": 9006,
+  "connectTo": [
+    { "nodeID": "H", "nodeIP": "127.0.0.1", "nodePort": 9007 },
+    { "nodeID": "I", "nodeIP": "127.0.0.1", "nodePort": 9008 },
+    { "nodeID": "J", "nodeIP": "127.0.0.1", "nodePort": 9009 }
+  ]
+}
