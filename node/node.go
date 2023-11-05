@@ -11,6 +11,22 @@ import (
 	"sync"
 )
 
+func enqueue(queue []message.Message, element message.Message) []message.Message {
+	queue = append(queue, element) // Simply append to enqueue.
+	return queue
+}
+
+func dequeue(queue []message.Message) (message.Message, []message.Message) {
+	element := queue[0] // The first element is the one to be dequeued.
+	if len(queue) == 1 {
+		var tmp = []message.Message{}
+		return element, tmp
+
+	}
+
+	return element, queue[1:] // Slice off the element once it is dequeued.
+}
+
 type Node struct {
 	ID              string // ID is own remote address as ip:port
 	IP              string
@@ -20,6 +36,7 @@ type Node struct {
 	NodesConnection map[string]net.Conn // save connection of connected nodes
 	OwnVectorClock  *vectorclock.VectorClock
 	OtherNodeClock  map[string]*vectorclock.VectorClock
+	MessageBuffer   []message.Message
 }
 
 func NewNode(id, ip, port string) *Node {
@@ -31,6 +48,7 @@ func NewNode(id, ip, port string) *Node {
 		NodesConnection: make(map[string]net.Conn),
 		OwnVectorClock:  vectorclock.NewVectorClock(),
 		OtherNodeClock:  make(map[string]*vectorclock.VectorClock),
+		MessageBuffer:   make([]message.Message, 0),
 	}
 	p.StartListener()
 	return p
@@ -133,37 +151,54 @@ func (node *Node) HandleNodeCommunication(id string, conn net.Conn) {
 }
 
 func (node *Node) handleReceivedMessage(nodeSrcId string, msg message.Message) {
-	log.Printf("[e] %s handle a message from Node %s: %s!!!!", node.ID, nodeSrcId, msg.Content)
 
 	// TODO: if there is no line in payloads, or no exist line in payloads match the ID
 	// then merge max value for all clock entries, and deliver the message
 	if index, isContained := containsName(msg.Payloads, node.ID); !isContained {
-		node.DeliverMessage(&msg)
+		node.DeliverMessage(msg, nil)
 
-		// TODO: check the queue if there is any message waiting for it
+		// TODO: check the buffer if there is any message that can be delivered, if yes, deliver it
+		var bufferedMsg message.Message
+		node.Mutex.Lock()
+		for len(node.MessageBuffer) > 0 {
+			bufferedMsg, node.MessageBuffer = dequeue(node.MessageBuffer)
+			go node.handleReceivedMessage(bufferedMsg.Source, bufferedMsg)
+		}
+		node.Mutex.Unlock()
 	} else {
-		payloadTimestamp := msg.Payloads[index]
+		payload := msg.Payloads[index]
 		payloadClock := vectorclock.NewVectorClock()
-		payloadClock.SetClock(payloadTimestamp.Clock)
+		payloadClock.SetClock(payload.Clock)
 
 		// TODO: if t <= local clock then deliver the message
 		if payloadClock.Compare(node.OwnVectorClock) == -1 {
-			node.DeliverMessage(&msg)
+			node.DeliverMessage(msg, &payload)
 
-			// TODO: check the queue if there is any message waiting for it
+			// TODO: check the buffer if there is any message that can be delivered, if yes, deliver it
+			var bufferedMsg message.Message
+			node.Mutex.Lock()
+			for len(node.MessageBuffer) > 0 {
+				bufferedMsg, node.MessageBuffer = dequeue(node.MessageBuffer)
+				go node.handleReceivedMessage(bufferedMsg.Source, bufferedMsg)
+			}
+			node.Mutex.Unlock()
 		}
-	}
 
-	// TODO: buffer the message
+		// TODO: buffer the message
+		node.BufferMessage(msg, payload)
+	}
 }
 
-func (node *Node) DeliverMessage(msg *message.Message) {
+func (node *Node) DeliverMessage(msg message.Message, payload *message.Payload) {
 	node.Mutex.Lock()
-	defer node.Mutex.Unlock()
 
-	log.Printf("[+] Message: [%s] delivered from Node %s to Node %s\n", msg.Content, msg.Source, node.ID)
+	log.Printf("[+] Message: [%s] sent from Node %s to Node %s\n", msg.Content, msg.Source, node.ID)
 	log.Printf("    Content: %s\n", msg.Content)
-	log.Printf("    Status: Delivered\n")
+	log.Printf("    Status: Delivered at %v\n", msg.Timestamp)
+
+	if payload != nil {
+		log.Printf("    Cause: Message from %s at %v is delivered\n", payload.Name, payload.Clock)
+	}
 
 	// Log the changes in clock
 	for name, clock := range node.OtherNodeClock {
@@ -192,9 +227,24 @@ func (node *Node) DeliverMessage(msg *message.Message) {
 
 	// Update site P2’s local, logical clock.
 	node.OwnVectorClock.Increment(node.ID)
-	node.OwnVectorClock.Merge(msg.Timestamp)
+	node.OwnVectorClock = node.OwnVectorClock.Merge(msg.Timestamp)
 
 	log.Printf("    Updated Clock for Node %s: %v\n", node.ID, node.OwnVectorClock.GetClock())
+	node.Mutex.Unlock()
+}
+
+func (node *Node) BufferMessage(msg message.Message, cause message.Payload) {
+	node.Mutex.Lock()
+	defer node.Mutex.Unlock()
+
+	log.Printf("[-] Message: [%s] sent from Node %s to Node %s\n", msg.Content, msg.Source, node.ID)
+	log.Printf("    Content: %s\n", msg.Content)
+	log.Printf("    Status: Buffered\n")
+	log.Printf("    Cause: wait for delivery to %s at %v\n", cause.Name, cause.Clock)
+	log.Printf("    Timestamp: %v\n", msg.Timestamp)
+	log.Printf("    Local time: %v\n", node.OwnVectorClock.GetClock())
+
+	node.MessageBuffer = enqueue(node.MessageBuffer, msg)
 }
 
 func containsName(payloads []message.Payload, name string) (int, bool) {
@@ -245,14 +295,16 @@ func (node *Node) SendMessage(destNodeID, content string) error {
 
 	serializedMessage = serializedMessage + "\n"
 
-	// Send the message with content M, timestamp tm, and other nodes clock VPs
+	// Send the message with content M, timestamp tm, and other nodes' clock VPs
 	_, err = conn.Write([]byte(serializedMessage))
 	if err != nil {
 		return fmt.Errorf("Failed to send message to Node %s: %v", destNodeID, err)
 	}
 
-	// Add (Pj, tm) to other nodes clock VP, rewrite if exists
+	// Add (Pj, tm) to other nodes' clock VP, rewrite if exists
 	node.OtherNodeClock[destNodeID] = node.OwnVectorClock.Clone()
+
+	log.Printf("[+] Message: [%s] sent from Node %s to Node %s at %v\n", content, node.ID, destNodeID, msg.Timestamp)
 
 	return nil
 }

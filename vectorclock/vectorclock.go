@@ -46,8 +46,6 @@ func (vc *VectorClock) Increment(peerID string) {
 }
 
 func (vc *VectorClock) Compare(other *VectorClock) int {
-	vc.mu.Lock()
-	defer vc.mu.Unlock()
 
 	vc.normalize(other)
 	other.normalize(vc)
@@ -112,8 +110,6 @@ func MergeClock(c1, c2 *VectorClock) *VectorClock {
 
 // normalize the vector clock by ensuring it has all keys from another vector
 func (vc *VectorClock) normalize(other *VectorClock) {
-	vc.mu.Lock()
-	defer vc.mu.Unlock()
 
 	// Create a map to store entries from the current vector clock
 	ownEntries := make(map[string]int64)
@@ -199,9 +195,7 @@ func (vc *VectorClock) Merge(Timestamp []ClockEntry) *VectorClock {
 
 	// TODO: choose max value between vc and other for each entry
 	for i := range this.clock {
-		if other.clock[i].Value > this.clock[i].Value {
-			this.clock[i].Value = other.clock[i].Value
-		}
+		this.clock[i].Value = max(this.clock[i].Value, other.clock[i].Value)
 	}
 
 	return this
