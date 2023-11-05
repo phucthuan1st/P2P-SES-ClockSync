@@ -158,8 +158,8 @@ func (node *Node) handleReceivedMessage(nodeSrcId string, msg message.Message) {
 		node.DeliverMessage(msg, nil)
 
 		// TODO: check the buffer if there is any message that can be delivered, if yes, deliver it
-		var bufferedMsg message.Message
 		node.Mutex.Lock()
+		var bufferedMsg message.Message
 		for len(node.MessageBuffer) > 0 {
 			bufferedMsg, node.MessageBuffer = dequeue(node.MessageBuffer)
 			go node.handleReceivedMessage(bufferedMsg.Source, bufferedMsg)
@@ -169,9 +169,10 @@ func (node *Node) handleReceivedMessage(nodeSrcId string, msg message.Message) {
 		payload := msg.Payloads[index]
 		payloadClock := vectorclock.NewVectorClock()
 		payloadClock.SetClock(payload.Clock)
+		current := node.OwnVectorClock.Clone()
 
 		// TODO: if t <= local clock then deliver the message
-		if payloadClock.Compare(node.OwnVectorClock) == -1 {
+		if compare := payloadClock.Compare(current); compare == 0 || compare == -1 {
 			node.DeliverMessage(msg, &payload)
 
 			// TODO: check the buffer if there is any message that can be delivered, if yes, deliver it

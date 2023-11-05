@@ -2,7 +2,7 @@
 
 ## Introduction
 
-This repository contains an implementation of a P2P (Peer-to-Peer) network using the Go programming language. The project also includes the SES (Source-Initiated Time Synchronization) Algorithm for clock synchronization among the peers in the network.
+This repository contains an implementation of a P2P (Peer-to-Peer) network using the Go programming language. The project also includes the SES (Schiper-Eggli-Sandoz) Algorithm for clock synchronization among the peers in the network.
 
 ## Table of Contents
 
@@ -29,30 +29,7 @@ git clone https://github.com/phucthuan1st/p2p-clock-sync.git
 
 ```bash
 cd p2p-clock-sync
-go run main.go
-```
-
-## Testing on Docker
-
-You can easily test the P2P network and clock synchronization project using Docker. Follow these steps to run the project within a Docker container:
-
-1. **Clone the Repository**: Clone the project repository to your local machine:
-
-```bash
-git clone https://github.com/phucthuan1st/p2p-clock-sync.git
-```
-
-2. **Setup Docker Network**: 
-You will need to setup a subnet in Docker. You can use the command below to create a subnet with 14 hosts:
-
-```bash
-docker network create --subnet=10.10.10.0/24 --gateway=10.10.10.99 --ip-range=10.10.10.1/28 p2p
-```
-
-3. **Run Test with Docker**: Once the image is built, you can create a Docker container based on that image. Make sure to map the necessary ports if your project requires it. I have created a script for creating containers as well as run the program
-
-```bash
-./setup_and_run.sh
+go run main.go --config config/NodeX.json
 ```
 
 ## P2P Network
@@ -67,7 +44,7 @@ This project simulates a P2P network, where nodes communicate with each other di
 
 The project implements the SES (Source-Initiated Time Synchronization) Algorithm for clock synchronization among the P2P network nodes. This algorithm allows nodes to synchronize their clocks with a reference node.
 
-- **SES Algorithm**: The Source-Initiated Time (?) Synchronization Algorithm is used to establish a common time reference among the network nodes.
+- **SES Algorithm**: The Schiper-Eggli-Sandoz Algorithm is used to establish a common time reference among the network nodes.
 
 - **Clock Precision**: The algorithm takes into account clock precision, network delays, and clock drift to ensure accurate time synchronization.
 

@@ -82,7 +82,7 @@ func (vc *VectorClock) areEqual(other *VectorClock) bool {
 // Rule 3: Less than (ta < tb iff ta[i] <= tb[i] and ta[i] != tb[i], for all i)
 func (vc *VectorClock) isLessThan(other *VectorClock) bool {
 	for i := 0; i < len(vc.clock); i++ {
-		if vc.clock[i].Value >= other.clock[i].Value {
+		if vc.clock[i].Value > other.clock[i].Value {
 			return false
 		}
 	}
