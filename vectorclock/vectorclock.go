@@ -26,6 +26,10 @@ func (vc *VectorClock) GetClock() []ClockEntry {
 	return vc.clock
 }
 
+func (vc *VectorClock) SetClock(clock []ClockEntry) {
+	vc.clock = clock
+}
+
 func (vc *VectorClock) Increment(peerID string) {
 	vc.mu.Lock()
 	defer vc.mu.Unlock()
@@ -181,4 +185,24 @@ func (vc *VectorClock) Clone() *VectorClock {
 	}
 
 	return clone
+}
+
+// Merge timestamp to a vectorclokc vc
+func (vc *VectorClock) Merge(Timestamp []ClockEntry) *VectorClock {
+	this := vc.Clone()
+
+	other := NewVectorClock()
+	other.SetClock(Timestamp)
+
+	this.normalize(other)
+	other.normalize(this)
+
+	// TODO: choose max value between vc and other for each entry
+	for i := range this.clock {
+		if other.clock[i].Value > this.clock[i].Value {
+			this.clock[i].Value = other.clock[i].Value
+		}
+	}
+
+	return this
 }

@@ -1,11 +1,13 @@
 package node
 
 import (
+	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"os"
+	"p2p-ses-clocksync/message"
 	"p2p-ses-clocksync/vectorclock"
-	"strings"
 	"sync"
 )
 
@@ -34,21 +36,21 @@ func NewNode(id, ip, port string) *Node {
 	return p
 }
 
-func (p *Node) StartListener() {
-	listenAddr := p.IP + ":" + p.Port
+func (node *Node) StartListener() {
+	listenAddr := node.IP + ":" + node.Port
 	listener, err := net.Listen("tcp", listenAddr)
 	if err != nil {
 		fmt.Println("[x] Error starting listener:", err)
 		os.Exit(1)
 	}
-	p.Listener = listener
-	fmt.Printf("[o] Node %s start listening on %s\n", p.ID, listenAddr)
-	go p.AcceptConnections()
+	node.Listener = listener
+	log.Printf("[o] Node %s start listening on %s\n", node.ID, listenAddr)
+	go node.AcceptConnections()
 }
 
-func (p *Node) AcceptConnections() {
+func (node *Node) AcceptConnections() {
 	for {
-		conn, err := p.Listener.Accept()
+		conn, err := node.Listener.Accept()
 		if err != nil {
 			fmt.Println("[x] Error accepting connection:", err)
 			continue
@@ -59,108 +61,198 @@ func (p *Node) AcceptConnections() {
 		nameBuffer := make([]byte, 128) // Adjust the buffer size as needed
 		n, err := conn.Read(nameBuffer)
 		if err != nil {
-			fmt.Printf("[x] Error reading name from Node %s: %v\n", remoteAddr, err)
+			log.Printf("[x] Error reading name from Node %s: %v\n", remoteAddr, err)
 			continue
 		}
 		incomingName := string(nameBuffer[:n])
 
 		// Add the connected peer to the list of peers with the incoming name
-		fmt.Printf("[a] Node %s accepted connection from Node %s\n", p.ID, incomingName)
-		p.AddNodeConnection(incomingName, conn)
+		log.Printf("[a] Node %s accepted connection from Node %s\n", node.ID, incomingName)
+		node.AddNodeConnection(incomingName, conn)
 	}
 }
 
-func (p *Node) AddNodeConnection(id string, conn net.Conn) {
-	p.Mutex.Lock()
-	p.NodesConnection[id] = conn
-	p.Mutex.Unlock()
+func (node *Node) AddNodeConnection(id string, conn net.Conn) {
+	node.Mutex.Lock()
+	node.NodesConnection[id] = conn
+	node.Mutex.Unlock()
 
-	go p.HandleNodeCommunication(id, conn)
+	go node.HandleNodeCommunication(id, conn)
 }
 
-func (p *Node) HandleNodeCommunication(id string, conn net.Conn) {
-	defer func() {
-		conn.Close()
-		p.RemoveNodeConnection(id)
-	}()
-	for {
-		data := make([]byte, 128)
-		n, err := conn.Read(data)
-		if err != nil {
-			fmt.Printf("[x] Node %s disconnected from Node %s\n", p.ID, id)
-			break
-		}
-
-		// TODO: check the clock to decide whether buffer or delivery
-		dataString := string(data[:n])
-		messages := strings.Split(dataString, "|")
-
-		for _, message := range messages {
-			if message != "" {
-				fmt.Printf("<-- %s received a message from Node %s: %s\n", p.ID, id, message)
-			}
-		}
-	}
+func (node *Node) RemoveNodeConnection(id string) {
+	node.Mutex.Lock()
+	defer node.Mutex.Unlock()
+	delete(node.NodesConnection, id)
 }
 
-func (p *Node) RemoveNodeConnection(id string) {
-	p.Mutex.Lock()
-	defer p.Mutex.Unlock()
-	delete(p.NodesConnection, id)
-}
-
-func (p *Node) MakeNodeConnection(nodeID, nodeIP, nodePort string) error {
+func (node *Node) MakeNodeConnection(nodeID, nodeIP, nodePort string) error {
 	remoteAddr := nodeIP + ":" + nodePort
 
 	// Establish a TCP connection to the remote peer
 	conn, err := net.Dial("tcp", remoteAddr)
 	if err != nil {
-		fmt.Printf("[x] Error connecting to Node %s at %s: %v\n", nodeID, remoteAddr, err)
+		log.Printf("[x] Error connecting to Node %s at %s: %v\n", nodeID, remoteAddr, err)
 		return err
 	}
 
 	// Add the connected peer to the list of peers
-	fmt.Printf("[m] Node %s make a connection to Node %s\n", p.ID, nodeID)
-	p.AddNodeConnection(nodeID, conn)
+	log.Printf("[m] Node %s make a connection to Node %s\n", node.ID, nodeID)
+	node.AddNodeConnection(nodeID, conn)
 
 	// Send a message with the name of the node
-	message := p.ID
+	message := node.ID
 	_, err = conn.Write([]byte(message))
 	if err != nil {
-		fmt.Printf("[x] Error sending message to Node %s: %v\n", nodeID, err)
+		log.Printf("[x] Error sending message to Node %s: %v\n", nodeID, err)
 		return err
 	}
 
 	return nil
 }
 
-func (p *Node) SendMessage(id, message string) {
-	p.Mutex.Lock()
-	defer p.Mutex.Unlock()
+func (node *Node) HandleNodeCommunication(id string, conn net.Conn) {
+	defer func() {
+		conn.Close()
+		node.RemoveNodeConnection(id)
+	}()
 
-	if conn, ok := p.NodesConnection[id]; ok {
-		// TODO: send message along with the other clock
-		// increment own process clock counter
-		p.OwnVectorClock.Increment(p.ID)
+	decoder := json.NewDecoder(conn)
+	for {
+		var msg message.Message
 
-		// TODO: save other clock
-		p.OtherNodeClock[id] = p.OwnVectorClock.Clone()
-
-		clockString, _ := p.OwnVectorClock.Serialize()
-		message = message + "\n   Clock status:\n   " + clockString
-
-		fmt.Printf("--> Node %s sending message to node %s: %s\n", p.ID, id, message)
-		_, err := conn.Write([]byte(message + "|"))
-
-		if err != nil {
-			fmt.Println("Error sending message to Node", id)
+		// Read one line (up to the newline delimiter)
+		if err := decoder.Decode(&msg); err != nil {
+			log.Printf("[x] Node %s disconnected from Node %s\n", node.ID, id)
+			break
 		}
 
-		for id, clock := range p.OtherNodeClock {
-			clockString, _ := clock.Serialize()
-			fmt.Printf("   From %s ---> %s: %s\n", p.ID, id, clockString)
-		}
-	} else {
-		fmt.Println("Node", id, "not found")
+		// Handle the received message
+		go node.handleReceivedMessage(id, msg) // Use a goroutine to handle each message concurrently
 	}
+}
+
+func (node *Node) handleReceivedMessage(nodeSrcId string, msg message.Message) {
+	log.Printf("[e] %s handle a message from Node %s: %s!!!!", node.ID, nodeSrcId, msg.Content)
+
+	// TODO: if there is no line in payloads, or no exist line in payloads match the ID
+	// then merge max value for all clock entries, and deliver the message
+	if index, isContained := containsName(msg.Payloads, node.ID); !isContained {
+		node.DeliverMessage(&msg)
+
+		// TODO: check the queue if there is any message waiting for it
+	} else {
+		payloadTimestamp := msg.Payloads[index]
+		payloadClock := vectorclock.NewVectorClock()
+		payloadClock.SetClock(payloadTimestamp.Clock)
+
+		// TODO: if t <= local clock then deliver the message
+		if payloadClock.Compare(node.OwnVectorClock) == -1 {
+			node.DeliverMessage(&msg)
+
+			// TODO: check the queue if there is any message waiting for it
+		}
+	}
+
+	// TODO: buffer the message
+}
+
+func (node *Node) DeliverMessage(msg *message.Message) {
+	node.Mutex.Lock()
+	defer node.Mutex.Unlock()
+
+	log.Printf("[+] Message: [%s] delivered from Node %s to Node %s\n", msg.Content, msg.Source, node.ID)
+	log.Printf("    Content: %s\n", msg.Content)
+	log.Printf("    Status: Delivered\n")
+
+	// Log the changes in clock
+	for name, clock := range node.OtherNodeClock {
+		log.Printf("    Clock for Node %s (before merge): %v\n", name, clock.GetClock())
+	}
+
+	/*
+		Merge V_M (in message) with V_P2 as follows.
+			If (P,t) is not there in V_P2, merge.
+			If (P,t) is present in V_P2, t is updated with max(t[i] in Vm, t[i] in V_P2). {Component-wise maximum}.
+	*/
+	for _, payload := range msg.Payloads {
+		clock := vectorclock.NewVectorClock()
+		clock.SetClock(payload.Clock)
+
+		if _, ok := node.OtherNodeClock[payload.Name]; !ok {
+			node.OtherNodeClock[payload.Name] = clock
+		} else {
+			clockEntries := node.OtherNodeClock[payload.Name].Clone().GetClock()
+			node.OtherNodeClock[payload.Name] = clock.Merge(clockEntries)
+		}
+
+		// Log the changes in clock after the merge
+		log.Printf("    Clock for Node %s (after merge): %v\n", payload.Name, node.OtherNodeClock[payload.Name].GetClock())
+	}
+
+	// Update site P2’s local, logical clock.
+	node.OwnVectorClock.Increment(node.ID)
+	node.OwnVectorClock.Merge(msg.Timestamp)
+
+	log.Printf("    Updated Clock for Node %s: %v\n", node.ID, node.OwnVectorClock.GetClock())
+}
+
+func containsName(payloads []message.Payload, name string) (int, bool) {
+	for index, payload := range payloads {
+		if payload.Name == name {
+			return index, true
+		}
+	}
+	return -1, false
+}
+
+func (node *Node) SendMessage(destNodeID, content string) error {
+	node.Mutex.Lock()
+	defer node.Mutex.Unlock()
+
+	// Check if the destination node exists in the connections
+	conn, ok := node.NodesConnection[destNodeID]
+	if !ok {
+		return fmt.Errorf("Node %s not found", destNodeID)
+	}
+
+	// Increment the own vector clock
+	node.OwnVectorClock.Increment(node.ID)
+
+	// Create payloads from other node clocks
+	payloads := make([]message.Payload, 0)
+	for name, clock := range node.OtherNodeClock {
+		payloads = append(payloads, message.Payload{
+			Name:  name,
+			Clock: clock.GetClock(),
+		})
+	}
+
+	// Create the message
+	msg := message.Message{
+		Source:    node.ID,
+		Dest:      destNodeID,
+		Content:   content,
+		Timestamp: node.OwnVectorClock.Clone().GetClock(),
+		Payloads:  payloads,
+	}
+
+	// Serialize the message
+	serializedMessage, err := msg.Serialize()
+	if err != nil {
+		return fmt.Errorf("Serialization failed: %v", err)
+	}
+
+	serializedMessage = serializedMessage + "\n"
+
+	// Send the message with content M, timestamp tm, and other nodes clock VPs
+	_, err = conn.Write([]byte(serializedMessage))
+	if err != nil {
+		return fmt.Errorf("Failed to send message to Node %s: %v", destNodeID, err)
+	}
+
+	// Add (Pj, tm) to other nodes clock VP, rewrite if exists
+	node.OtherNodeClock[destNodeID] = node.OwnVectorClock.Clone()
+
+	return nil
 }
